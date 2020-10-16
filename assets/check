@@ -1,0 +1,76 @@
+#!/bin/bash
+
+set -e
+set -u
+set -o pipefail
+
+exec 3>&1 # make stdout available as fd 3 for the result
+exec 1>&2 # redirect all output to stderr for logging
+
+payload=$(mktemp "input.XXXXXX")
+
+cat > "${payload}" <&0
+
+artifact_root_url=$(jq -r '.source.artifact_root_url // "https://artifact-public.instana.io/artifactory/shared/com/instana/pcf-tile"' < "${payload}")
+username=$(jq -r '.source.username // "_"' < "${payload}")
+download_key=$(jq -r '.source.download_key // ""' < "${payload}")
+skip_ssl_verification=$(jq -r '.source.skip_ssl_verification // ""' < "${payload}")
+
+provided_version=$(jq -r '.version.version // ""' < $payload)
+
+if [ -z "${artifact_root_url}" ]; then
+  echo "invalid payload (missing artifact_root_url)"
+  exit 1
+fi
+
+if [ -z "${username}" ]; then
+  echo "invalid payload (missing username)"
+  exit 1
+fi
+
+if [ -z "${download_key}" ]; then
+  echo "invalid payload (missing download_key)"
+  exit 1
+fi
+
+args_security=
+
+[ -n "$username" ] && args_security="-u $username";
+[ -n "$download_key" ] && args_security="$args_security:$download_key";
+
+[ "${skip_ssl_verification}" = 'true' ] && args_security="$args_security -k";
+
+metadata=$(curl --silent --fail ${args_security} "${artifact_root_url}/maven-metadata.xml")
+metadata_file=$(mktemp "maven-metadata.XXXXXX")
+
+cat > "${metadata_file}" <<< "${metadata}"
+
+if [ -z "${provided_version}" ]; then
+  latest_version=$(xsltproc "$(dirname "${BASH_SOURCE[0]}")/xslt/extract-latest-version.xslt" "${metadata_file}")
+
+  echo "Returning latest version: '${latest_version}'"
+
+  jq -R -r '[{version: .}]' <<< "${latest_version}" >&3
+else
+  all_versions=$(xsltproc "$(dirname "${BASH_SOURCE[0]}")/xslt/extract-all-versions.xslt" "${metadata_file}" | grep -v "^$")
+
+  versions=(${all_versions//$'\n'/ })
+
+  version_found=false
+  result_versions=()
+  for version in "${versions[@]}"; do
+      if [ "${version}" = "${provided_version}" ] ; then
+        version_found='true'
+      fi
+
+      if [ "${version_found}" = 'true' ]; then
+        result_versions+=("${version}")
+      fi
+  done
+
+  if [ ${#result_versions[@]} -eq 0 ]; then
+    result_versions=( "${versions[@]}" )
+  fi
+
+  jq -R -r 'split(" ") | [.[] | {version: .}]' <<< "${result_versions[*]}" >&3
+fi

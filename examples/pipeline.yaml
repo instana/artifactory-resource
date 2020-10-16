@@ -1,0 +1,27 @@
+---
+
+resource_types:
+
+  - name: artifactory-resource
+    type: docker-image
+    source:
+      repository: instana/artifactory-resource
+      tag: latest
+
+resources:
+
+  - name: instana-pcf-tile
+    type: artifactory-resource
+    source:
+      download_key: ((instana-download-key))
+      group: com.instana
+      artifact: pcf-tile
+      file_name: pcf-tile-:version.pivotal
+      skip_ssl_verification: true
+
+jobs:
+
+  - name: fetch-latest-tile
+    plan:
+      - get: instana-pcf-tile
+        trigger: true

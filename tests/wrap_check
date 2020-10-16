@@ -1,0 +1,28 @@
+#!/bin/bash
+
+readonly input_file=$(mktemp /tmp/input.XXXXXX)
+
+if [ -n "${4}" ]; then
+    echo "{
+        \"source\": {
+            \"download_key\": \"${1}\",
+            \"group\": \"${2}\",
+            \"artifact\": \"${3}\",
+            \"skip_ssl_verification\": true
+        },
+        \"version\": {
+            \"version\": \"${4}\"
+        }
+    }" > "${input_file}"
+else
+    echo "{
+        \"source\": {
+            \"download_key\": \"${1}\",
+            \"group\": \"${2}\",
+            \"artifact\": \"${3}\",
+            \"skip_ssl_verification\": true
+        }
+    }" > "${input_file}"
+fi
+
+docker run -i instana/artifactory-resource:latest bash -x /opt/resource/check < "${input_file}"

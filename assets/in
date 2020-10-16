@@ -1,0 +1,86 @@
+#!/bin/bash
+
+set -e
+set -u
+set -o pipefail
+
+exec 3>&1 # make stdout available as fd 3 for the result
+exec 1>&2 # redirect all output to stderr for logging
+
+payload=$(mktemp "input.XXXXXX")
+
+cat > "${payload}" <&0
+
+target_directory="${1}"
+
+if [ -z "${target_directory}" ]; then
+  echo "invalid invocation (missing target directory)"
+  exit 1
+fi
+
+artifact_root_url=$(jq -r '.source.artifact_root_url // "https://artifact-public.instana.io/artifactory/shared"' < "${payload}")
+username=$(jq -r '.source.username // "_"' < "${payload}")
+download_key=$(jq -r '.source.download_key // ""' < "${payload}")
+group=$(jq -r '.source.group // ""' < "${payload}")
+artifact=$(jq -r '.source.artifact // ""' < "${payload}")
+file_name=$(jq -r '.source.file_name // ""' < "${payload}")
+skip_ssl_verification=$(jq -r '.source.skip_ssl_verification // ""' < "${payload}")
+
+version_to_download=$(jq -r '.version.version // ""' < "${payload}")
+
+if [ -z "${artifact_root_url}" ]; then
+  echo "invalid payload (missing artifact_root_url)"
+  exit 1
+fi
+
+if [ -z "${username}" ]; then
+  echo "invalid payload (missing username)"
+  exit 1
+fi
+
+if [ -z "${download_key}" ]; then
+  echo "invalid payload (missing download_key)"
+  exit 1
+fi
+
+if [ -z "${group}" ]; then
+  echo "invalid payload (missing group)"
+  exit 1
+fi
+
+if [ -z "${artifact}" ]; then
+  echo "invalid payload (missing artifact)"
+  exit 1
+fi
+
+if [ -z "${file_name}" ]; then
+  echo "invalid payload (missing file_name)"
+  exit 1
+fi
+
+if [ -z "${version_to_download}" ]; then
+  echo "invalid payload (missing '.version.version')"
+  echo "received payload:"
+
+  cat "${payload}"
+
+  exit 1
+fi
+
+args_security=
+
+[ -n "$username" ] && args_security="-u $username";
+[ -n "$download_key" ] && args_security="$args_security:$download_key";
+
+[ "${skip_ssl_verification}" = 'true' ] && args_security="$args_security -k";
+
+artifact_url="${artifact_root_url}/${group//.//}/${artifact}/:version/${file_name}"
+
+final_artifact_root_url="${artifact_url//:version/${version_to_download}}"
+
+echo "${version_to_download}" > "${target_directory}/version"
+readonly final_file_name=$(basename "${final_artifact_root_url}")
+
+curl --silent --fail --show-error ${args_security} -o "${target_directory}/${final_file_name}" "${final_artifact_root_url}"
+
+echo "{\"version\":{\"version\":\"${version_to_download}\"},\"metadata\":[{\"name\":\"file_name\",\"value\":\"${final_file_name}\"}]}" >&3
