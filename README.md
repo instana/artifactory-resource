@@ -7,7 +7,7 @@ To define an Instana Artifactory resource for a Concourse pipeline:
 resource_types:
 
 - name: artifactory-resource
-  type: docker-image
+  type: registry-image
   source:
     repository: instana/artifactory-resource
     tag: latest
