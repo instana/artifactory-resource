@@ -28,8 +28,11 @@ resources:
 * `group`: *Required* Maven group to download.
 * `artifact`: *Required* Maven artifact to download.
 * `download_key`: *Required* A valid Instana download key.
-* `file_type`: *Required* The extension to download, needed when there are different types of artifacts with the same GAV.
-* `skip_ssl_verification`: *Optional* Does not perform SSL verification.
+* `file_name`: *Required* The pattern of the file to download; use the `:version` token to denote the version number.
+  There is no dedicated support for `classifier` or `packaging_type` as in Maven, as those end up reflected in the file name anyhow.
+* `check_etag`: *Optional* Add the `etag` of the artefact to the version number, which is very useful when you consume, for example, `-SNAPSHOT` versions; default: do not check `etag`.
+  **IMPORTANT:** Checking the `etag` costs one additional HTTP call per version; be very mindful of using it with artefacts that have lots of versions!
+* `skip_ssl_verification`: *Optional* Does not perform SSL verification; default: perform SSL verification.
 Don't try this at home.
 
 ## Resource behavior
@@ -42,6 +45,9 @@ Retrieves and returns all or newer versions available of the artifact.
 
 Retrieves a specific version of the artifact based.
 It also populates a `version` file, containing the artifact version.
+
+The `in` method accepts an optional `version_file` configuration that specifies the path of a file containing the version to download, rather than the latest version that is passed in input automatically by Concourse.
+This can be very handy when working with versioning pinning for resources, especially in combination with the [`semver`](https://github.com/concourse/semver-resource) resource.
 
 ### `out`
 
@@ -56,4 +62,10 @@ Run the following command in the root folder:
 
 ```sh
 docker build -t instana/artifactory-resource .
+```
+
+### Public to Docker Hub
+
+```sh
+docker push instana/artifactory-resource:latest
 ```

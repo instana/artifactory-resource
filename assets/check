@@ -11,12 +11,26 @@ payload=$(mktemp "input.XXXXXX")
 
 cat > "${payload}" <&0
 
-artifact_root_url=$(jq -r '.source.artifact_root_url // "https://artifact-public.instana.io/artifactory/shared/com/instana/pcf-tile"' < "${payload}")
+artifact_root_url=$(jq -r '.source.artifact_root_url // "https://artifact-public.instana.io/artifactory/shared"' < "${payload}")
+group=$(jq -r '.source.group // ""' < "${payload}")
+artifact=$(jq -r '.source.artifact // ""' < "${payload}")
+file_name=$(jq -r '.source.file_name // ""' < "${payload}")
 username=$(jq -r '.source.username // "_"' < "${payload}")
 download_key=$(jq -r '.source.download_key // ""' < "${payload}")
 skip_ssl_verification=$(jq -r '.source.skip_ssl_verification // ""' < "${payload}")
+check_etag=$(jq -r '.source.check_etag // ""' < "${payload}")
+debug=$(jq -r '.source.debug // "_"' < "${payload}")
+
+if [ -n "${debug}" ]; then
+  set -x
+fi
 
 provided_version=$(jq -r '.version.version // ""' < $payload)
+
+if [ -n "${provided_version}" ] && [ "${check_etag}" = 'true' ]; then
+  # Strip the etag from the version
+  provided_version=$(echo "${provided_version}" | sed 's/^\(.*\)\-[0-9a-zA-Z]\{40\}$/\1/')
+fi
 
 if [ -z "${artifact_root_url}" ]; then
   echo "invalid payload (missing artifact_root_url)"
@@ -33,6 +47,21 @@ if [ -z "${download_key}" ]; then
   exit 1
 fi
 
+if [ -z "${group}" ]; then
+  echo "invalid payload (missing group)"
+  exit 1
+fi
+
+if [ -z "${artifact}" ]; then
+  echo "invalid payload (missing artifact)"
+  exit 1
+fi
+
+if [ -z "${file_name}" ]; then
+  echo "invalid payload (missing file_name)"
+  exit 1
+fi
+
 args_security=
 
 [ -n "$username" ] && args_security="-u $username";
@@ -40,37 +69,52 @@ args_security=
 
 [ "${skip_ssl_verification}" = 'true' ] && args_security="$args_security -k";
 
-metadata=$(curl --silent --fail ${args_security} "${artifact_root_url}/maven-metadata.xml")
+metadata=$(curl --silent --fail ${args_security} "${artifact_root_url}/${group//.//}/${artifact}/maven-metadata.xml")
 metadata_file=$(mktemp "maven-metadata.XXXXXX")
 
 cat > "${metadata_file}" <<< "${metadata}"
 
-if [ -z "${provided_version}" ]; then
+if [ -n "${provided_version}" ]; then
   latest_version=$(xsltproc "$(dirname "${BASH_SOURCE[0]}")/xslt/extract-latest-version.xslt" "${metadata_file}")
 
-  echo "Returning latest version: '${latest_version}'"
-
-  jq -R -r '[{version: .}]' <<< "${latest_version}" >&3
+  versions=(${latest_version})
 else
   all_versions=$(xsltproc "$(dirname "${BASH_SOURCE[0]}")/xslt/extract-all-versions.xslt" "${metadata_file}" | grep -v "^$")
 
   versions=(${all_versions//$'\n'/ })
-
-  version_found=false
-  result_versions=()
-  for version in "${versions[@]}"; do
-      if [ "${version}" = "${provided_version}" ] ; then
-        version_found='true'
-      fi
-
-      if [ "${version_found}" = 'true' ]; then
-        result_versions+=("${version}")
-      fi
-  done
-
-  if [ ${#result_versions[@]} -eq 0 ]; then
-    result_versions=( "${versions[@]}" )
-  fi
-
-  jq -R -r 'split(" ") | [.[] | {version: .}]' <<< "${result_versions[*]}" >&3
 fi
+
+version_found=false
+result_versions=()
+for version in "${versions[@]}"; do
+    if [ "${version}" = "${provided_version}" ] ; then
+      version_found='true'
+    fi
+
+    if [ "${version_found}" = 'true' ]; then
+      result_versions+=("${version}")
+    fi
+done
+
+if [ ${#result_versions[@]} -eq 0 ]; then
+  result_versions=( "${versions[@]}" )
+fi
+
+{
+  for result_version in "${result_versions[@]}"; do
+    if [ "${check_etag}" = 'true' ]; then
+      artifact_url="${artifact_root_url}/${group//.//}/${artifact}/:version/${file_name}"
+      final_artifact_root_url="${artifact_url//:version/${result_version}}"
+
+      etag=$( \
+          curl -I --silent --fail ${args_security} "${final_artifact_root_url}" | \
+          grep '^etag:' | \
+          awk '{ print $2 }' \
+        )
+
+      echo "${result_version}-${etag}"
+    else
+      echo "${result_version}"
+    fi
+  done
+} | dos2unix | jq --raw-input --slurp -R -r 'split("\n") | [.[] | select(length > 0) | {version: .}]' >&3

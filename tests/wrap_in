@@ -2,13 +2,14 @@
 
 readonly input_file=$(mktemp /tmp/input.XXXXXX)
 
-if [ -n "${4}" ]; then
+if [ -n "${5}" ]; then
     echo "{
         \"source\": {
             \"download_key\": \"${1}\",
             \"group\": \"${2}\",
             \"artifact\": \"${3}\",
             \"file_name\": \"${4}\",
+            \"check_etag\": false,
             \"skip_ssl_verification\": true
         },
         \"version\": {
@@ -22,6 +23,7 @@ else
             \"group\": \"${2}\",
             \"artifact\": \"${3}\",
             \"file_name\": \"${4}\",
+            \"check_etag\": false,
             \"skip_ssl_verification\": true
         }
     }" > "${input_file}"

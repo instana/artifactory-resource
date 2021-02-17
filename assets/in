@@ -19,14 +19,26 @@ if [ -z "${target_directory}" ]; then
 fi
 
 artifact_root_url=$(jq -r '.source.artifact_root_url // "https://artifact-public.instana.io/artifactory/shared"' < "${payload}")
-username=$(jq -r '.source.username // "_"' < "${payload}")
-download_key=$(jq -r '.source.download_key // ""' < "${payload}")
 group=$(jq -r '.source.group // ""' < "${payload}")
 artifact=$(jq -r '.source.artifact // ""' < "${payload}")
+version_file=$(jq -r '.source.version_file // ""' < "${payload}")
 file_name=$(jq -r '.source.file_name // ""' < "${payload}")
+username=$(jq -r '.source.username // "_"' < "${payload}")
+download_key=$(jq -r '.source.download_key // ""' < "${payload}")
 skip_ssl_verification=$(jq -r '.source.skip_ssl_verification // ""' < "${payload}")
+check_etag=$(jq -r '.source.check_etag // ""' < "${payload}")
+debug=$(jq -r '.source.debug // "_"' < "${payload}")
 
-version_to_download=$(jq -r '.version.version // ""' < "${payload}")
+if [ -n "${debug}" ]; then
+  set -x
+fi
+
+provided_version=$(jq -r '.version.version // ""' < $payload)
+
+if [ -n "${provided_version}" ] && [ "${check_etag}" = 'true' ]; then
+  # Strip the etag from the version
+  provided_version=$(echo "${provided_version}" | sed 's/^\(.*\)\-[0-9a-zA-Z]\{40\}$/\1/')
+fi
 
 if [ -z "${artifact_root_url}" ]; then
   echo "invalid payload (missing artifact_root_url)"
@@ -58,13 +70,26 @@ if [ -z "${file_name}" ]; then
   exit 1
 fi
 
-if [ -z "${version_to_download}" ]; then
-  echo "invalid payload (missing '.version.version')"
-  echo "received payload:"
+if [ -n "${version_file}" ]; then
+  if [ ! -f "${version_file}" ]; then
+    echo "The version_file '${version_file}' does not exist"
+    exit 1
+  fi
 
-  cat "${payload}"
+  version_to_download=$(cat "${version_file}")
 
-  exit 1
+  echo "Downloading version '${version_to_download}' as specified by the version_file '${version_file}'"
+else
+  if [ -z "${provided_version}" ]; then
+    echo "invalid payload (missing '.version.version')"
+    echo "received payload:"
+
+    cat "${payload}"
+
+    exit 1
+  fi
+
+  version_to_download="${provided_version}"
 fi
 
 args_security=
@@ -80,7 +105,13 @@ final_artifact_root_url="${artifact_url//:version/${version_to_download}}"
 
 echo "${version_to_download}" > "${target_directory}/version"
 readonly final_file_name=$(basename "${final_artifact_root_url}")
+readonly target_file="${target_directory}/${final_file_name}"
 
-curl --silent --fail --show-error ${args_security} -o "${target_directory}/${final_file_name}" "${final_artifact_root_url}"
+if ! curl --silent --fail --show-error ${args_security} -o "${target_file}" "${final_artifact_root_url}"; then
+  echo "Download failed: ${final_artifact_root_url}"
+  exit 1
+fi
 
-echo "{\"version\":{\"version\":\"${version_to_download}\"},\"metadata\":[{\"name\":\"file_name\",\"value\":\"${final_file_name}\"}]}" >&3
+readonly etag=$(sha256sum < "${target_file}" | awk '{ print $1 }')
+
+echo "{\"version\":{\"version\":\"${version_to_download}\"},\"metadata\":[{\"name\":\"file_name\",\"value\":\"${final_file_name}\"},{\"name\":\"etag\",\"value\":\"${etag}\"}]}" >&3
