@@ -1,0 +1,41 @@
+
+resources:
+  - name: artifactory-resource-source
+    type: git
+    icon: gihub
+    source:
+      uri: https://github.com/instana/artifactory-resource.git
+      branch: ((branch))
+  - name: artifactory-resource-image-icr
+    type: registry-image
+    icon: docker
+    source:
+      repository: icr.io/instana/artifactory-resource
+      username: iamapikey
+      password: ((concourse-icr-containers-public.password))
+      tag: latest
+
+jobs:
+  - name: build-and-publish
+    plan:
+      - get: artifactory-resource-source
+        trigger: true
+      - task: image-build
+        privileged: true
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: concourse/oci-build-task
+          inputs:
+            - name: artifactory-resource-source
+          outputs:
+            - name: image
+          params:
+            CONTEXT: artifactory-resource-source
+          run:
+            path: build  
+      - put: artifactory-resource-image-icr
+        params:
+          image: image/image.tar

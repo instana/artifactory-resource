@@ -9,7 +9,7 @@ resource_types:
 - name: artifactory-resource
   type: registry-image
   source:
-    repository: instana/artifactory-resource
+    repository: icr.io/instana/artifactory-resource
     tag: latest
 
 resources:
@@ -64,8 +64,9 @@ Run the following command in the root folder:
 docker build -t instana/artifactory-resource .
 ```
 
-### Public to Docker Hub
+### Publish to Image Registry
 
 ```sh
-docker push instana/artifactory-resource:latest
+docker tag instana/artifactory-resource <your-image-repository-here>/artifactory-resource:latest
+docker push <your-image-repository-here>/artifactory-resource:latest
 ```
