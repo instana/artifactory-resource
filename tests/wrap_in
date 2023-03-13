@@ -2,7 +2,7 @@
 
 readonly input_file=$(mktemp /tmp/input.XXXXXX)
 
-if [ -n "${5}" ]; then
+if [ "$#" = 5 ]; then
     echo "{
         \"source\": {
             \"download_key\": \"${1}\",
@@ -16,7 +16,7 @@ if [ -n "${5}" ]; then
             \"version\": \"${5}\"
         }
     }" > "${input_file}"
-else
+elif [ "$#" = 4 ]; then
     echo "{
         \"source\": {
             \"download_key\": \"${1}\",
@@ -27,6 +27,10 @@ else
             \"skip_ssl_verification\": true
         }
     }" > "${input_file}"
+else
+    echo "Wrong number of arguments, you have provided $# arguments, this script needs either 4 or 5 arguments."
+    echo "Usage: $0 download_key group artifact file_name [version]"
+    exit 1
 fi
 
 docker run -i instana/artifactory-resource:latest bash -x /opt/resource/in . < "${input_file}"

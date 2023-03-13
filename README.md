@@ -64,9 +64,18 @@ Run the following command in the root folder:
 docker build -t instana/artifactory-resource .
 ```
 
+### Tests
+
+The wrapper scripts in tests are available to test the resource locally in an ad-hoc/manual way, outside of Concourse. There are no automated tests.
+
 ### Publish to Image Registry
 
 ```sh
 docker tag instana/artifactory-resource <your-image-repository-here>/artifactory-resource:latest
 docker push <your-image-repository-here>/artifactory-resource:latest
 ```
+
+## Related Resources
+
+Take a look at <https://github.com/instana/osgi-feature-resource> if you are looking for a resource that not only downloads the latest version of an artifact from an artifact repository, but consults a particular OSGi `features.xml` file to determine the version. This is useful when working with Instana agent plug-ins.
+
