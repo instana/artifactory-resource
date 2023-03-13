@@ -2,7 +2,7 @@
 resources:
   - name: artifactory-resource-source
     type: git
-    icon: gihub
+    icon: github
     source:
       uri: https://github.com/instana/artifactory-resource.git
       branch: ((branch))
