@@ -3,7 +3,7 @@
 resource_types:
 
   - name: artifactory-resource
-    type: docker-image
+    type: registry-image
     source:
       repository: icr.io/instana/artifactory-resource
       tag: latest
