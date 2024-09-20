@@ -1,0 +1,80 @@
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: build-and-publish-pipeline
+spec:
+  workspaces:
+    - name: output
+  params:
+    - name: git-repo-url
+      default: https://github.com/instana/artifactory-resource.git
+    - name: git-repo-branch
+      default: main
+    - name: image-repo-url
+      default: icr.io/instana/artifactory-resource
+    - name: image-tag
+      default: latest
+    - name: clone-to
+      default: "artifactory-resource"
+      type: string
+
+  tasks:
+    - name: pr-pending
+      taskRef:
+        apiVersion: custom.tekton.dev/v0
+        kind: PRStatusUpdater
+      params: 
+        - name: state
+          value: "pending"
+        - name: repo
+          value: "instana/artifactory-resource"
+        - name: sha
+          value: $(params.sha)
+        - name: jobName
+          value: $(params.job-name)
+        - name: targetURL
+          value: $(params.plrURL)
+    - name: git-clone
+      taskRef:
+        name: git-clone-full
+      workspaces:
+        - name: output
+      params:
+        - name: url
+          value: $(params.git-repo-url)
+        - name: revision
+          value: $(params.git-repo-branch)
+        - name: deleteExisting
+          value: "true"
+        - name: subdirectory
+          value: $(params.clone-to)
+    - name: build-image
+      taskSpec:
+        workspaces:
+        - name: output
+        params:
+          - name: CONTEXT
+            default: .
+          - name: DOCKERFILE
+            default: ./Dockerfile
+          - name: IMAGE
+            value: $(params.image-repo-url):$(params.image-tag)
+        steps:
+          - name: build
+            image: registry.redhat.io/ubi9/podman:latest
+            script: |
+              podman build -t $(params.IMAGE) -f $(workspaces.source.path)/$(params.DOCKERFILE) $(workspaces.source.path)/$(params.CONTEXT)
+    - name: push-image
+      taskSpec: 
+        workspaces:
+          - name: output
+        params:
+          - name: IMAGE
+            value: $(params.image-repo-url):$(params.image-tag)
+        steps:
+          - name: push
+            image: registry.redhat.io/ubi9/podman:latest
+            script: |
+              podman push $(params.IMAGE)
+        
